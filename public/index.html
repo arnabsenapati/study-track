@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyTrack — Student Study & Gap Time Tracker</title>
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Top Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <img src="/icon.png" alt="StudyTrack Logo" class="logo-img" />
+      <div>
+        <h1>StudyTrack</h1>
+        <p class="subtitle">Student Study Time, Daily Timeline &amp; Pending/Gap Report</p>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <div class="db-badge" id="dbStatusBadge" style="cursor: pointer;" title="Click to view the permanent SQLite database file in Windows Explorer.">
+        <span class="status-dot"></span>
+        <span id="dbStatusText">Saved on PC Disk (SQLite)</span>
+      </div>
+      <div class="header-actions">
+        <a href="/api/export/csv" class="btn btn-outline btn-sm" title="Download Excel/CSV Report">📊 Export CSV</a>
+        <a href="/api/export/json" class="btn btn-outline btn-sm" title="Download Full Database Backup">💾 Backup JSON</a>
+        <button type="button" class="btn btn-outline btn-sm" id="restoreBackupBtn" title="Restore from JSON Backup">📂 Restore</button>
+        <input type="file" id="restoreFileInput" accept=".json" style="display: none;" />
+        <button type="button" class="btn btn-outline btn-sm" id="printReportBtn" title="Print Report">🖨️ Print</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Date Navigation Bar -->
+    <section class="date-nav-bar card">
+      <div class="date-nav-controls">
+        <button type="button" class="btn btn-icon" id="prevDayBtn" title="Previous Day">◀ Prev Day</button>
+        <div class="date-picker-wrapper">
+          <label for="selectedDateInput" class="sr-only">Selected Date</label>
+          <input type="date" id="selectedDateInput" class="date-input" />
+          <span class="date-human-label" id="selectedDateHuman">Today</span>
+        </div>
+        <button type="button" class="btn btn-icon" id="nextDayBtn" title="Next Day">Next Day ▶</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="goTodayBtn">Jump to Today</button>
+      </div>
+      <div class="date-nav-hint">
+        Log your study start &amp; end times during the day, then record your <strong>Pending or Extra Hours</strong> at the end of the day to update the <strong>Pending Hours Pool</strong>.
+      </div>
+    </section>
+
+    <!-- Daily Summary KPI Cards -->
+    <section class="kpi-grid">
+      <div class="kpi-card kpi-studied">
+        <div class="kpi-label">How Much Studied (Selected Day)</div>
+        <div class="kpi-value" id="dayStudiedValue">0h 00m</div>
+        <div class="kpi-sub" id="dayStudiedSub">0 sessions logged</div>
+      </div>
+
+      <div class="kpi-card kpi-pending" id="dayEndKpiCard">
+        <div class="kpi-label">End-of-Day Pending / Extra (Day)</div>
+        <div class="kpi-value" id="dayPendingValue">0h 00m</div>
+        <div class="kpi-sub" id="dayPendingSub">Not entered for this day yet</div>
+      </div>
+
+      <div class="kpi-card kpi-window">
+        <div class="kpi-label">When Studied (Active Window)</div>
+        <div class="kpi-value kpi-value-sm" id="dayWindowValue">—</div>
+        <div class="kpi-sub" id="dayBreaksSub">0h 00m breaks between sessions</div>
+      </div>
+
+      <div class="kpi-card kpi-cumulative" id="poolKpiCard">
+        <div class="kpi-label">Pending Hours Pool (Balance)</div>
+        <div class="kpi-value kpi-value-sm" id="allTimePoolValue">0h 00m</div>
+        <div class="kpi-sub" id="allTimePoolSub">On track • Total Studied: 0h 00m</div>
+      </div>
+    </section>
+
+    <!-- Main Workspace: Left = Entry Forms, Right = Daily Timeline & Sessions -->
+    <div class="workspace-grid">
+      <!-- LEFT COLUMN: Study Session & End-of-Day Gap Entry -->
+      <div class="workspace-left">
+        <!-- 1. Live Timer Card -->
+        <section class="card timer-card" id="liveTimerCard">
+          <div class="card-header">
+            <h2>⚡ Live Study Timer</h2>
+            <span class="badge badge-live" id="timerStateBadge">Ready</span>
+          </div>
+          <p class="card-desc">Studying right now? Start the timer and it will automatically record your start and end time when you finish.</p>
+
+          <div class="timer-display-row">
+            <div class="timer-clock" id="liveTimerClock">00:00:00</div>
+            <div class="timer-meta" id="liveTimerMeta">Click Start when you begin studying</div>
+          </div>
+
+          <div class="timer-inputs-row">
+            <input type="text" id="timerSubjectInput" list="subjectSuggestions" placeholder="Subject / Topic (e.g., Mathematics)" class="input" />
+            <input type="text" id="timerNotesInput" placeholder="Quick note (optional)" class="input" />
+          </div>
+
+          <div class="timer-actions">
+            <button type="button" class="btn btn-success" id="startTimerBtn">▶ Start Study Timer</button>
+            <button type="button" class="btn btn-secondary" id="pauseTimerBtn" style="display: none;">⏸ Pause</button>
+            <button type="button" class="btn btn-danger" id="stopTimerBtn" style="display: none;">⏹ Stop &amp; Save Session</button>
+            <button type="button" class="btn btn-outline btn-sm" id="cancelTimerBtn" style="display: none;">Discard</button>
+          </div>
+        </section>
+
+        <!-- 2. Manual Study Session Form -->
+        <section class="card">
+          <div class="card-header">
+            <h2 id="sessionFormTitle">📝 Enter Study Start &amp; End Time</h2>
+            <span class="duration-preview-badge" id="sessionDurationPreview">Duration: 1h 00m</span>
+          </div>
+
+          <form id="studySessionForm">
+            <input type="hidden" id="editingSessionId" value="" />
+
+            <div class="form-row two-cols">
+              <div class="form-group">
+                <label for="startTimeInput">Start Time <span class="req">*</span></label>
+                <input type="time" id="startTimeInput" class="input input-lg" required />
+              </div>
+              <div class="form-group">
+                <label for="endTimeInput">End Time <span class="req">*</span></label>
+                <input type="time" id="endTimeInput" class="input input-lg" required />
+              </div>
+            </div>
+
+            <div class="quick-duration-row">
+              <span class="quick-label">Quick set end time:</span>
+              <button type="button" class="chip-btn" data-add-mins="30">+30m</button>
+              <button type="button" class="chip-btn" data-add-mins="45">+45m</button>
+              <button type="button" class="chip-btn" data-add-mins="60">+1 hr</button>
+              <button type="button" class="chip-btn" data-add-mins="90">+1.5 hrs</button>
+              <button type="button" class="chip-btn" data-add-mins="120">+2 hrs</button>
+              <button type="button" class="chip-btn" data-add-mins="180">+3 hrs</button>
+            </div>
+
+            <div class="form-group">
+              <label for="subjectInput">Subject / Topic</label>
+              <input type="text" id="subjectInput" list="subjectSuggestions" placeholder="e.g., Mathematics, Physics, Coding, Revision..." class="input" />
+              <datalist id="subjectSuggestions">
+                <option value="Mathematics"></option>
+                <option value="Physics"></option>
+                <option value="Chemistry"></option>
+                <option value="Biology"></option>
+                <option value="Computer Science"></option>
+                <option value="English"></option>
+                <option value="Revision / Practice"></option>
+              </datalist>
+            </div>
+
+            <div class="form-group">
+              <label for="notesInput">Study Notes (Optional)</label>
+              <input type="text" id="notesInput" placeholder="What chapter, assignment, or topic did you cover?" class="input" />
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-block" id="saveSessionBtn">➕ Add Study Session</button>
+              <button type="button" class="btn btn-outline" id="cancelEditSessionBtn" style="display: none;">Cancel Edit</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- 3. End-of-Day Pending & Extra Hours Entry -->
+        <section class="card pending-card">
+          <div class="card-header">
+            <h2>🌙 End-of-Day Pending &amp; Extra Hours</h2>
+            <span class="badge badge-amber" id="pendingSavedBadge">End of Day Entry</span>
+          </div>
+          <p class="card-desc">Pending hours <strong>increase</strong> the Pending Hours Pool (+), while Extra hours <strong>decrease</strong> it (−). A negative pool means you put in more hours than stipulated!</p>
+
+          <form id="dailyPendingForm">
+            <div class="eod-group eod-pending-group">
+              <div class="eod-group-title">⏳ Pending / Gap Hours <span class="eod-hint">(+ Increases Pool)</span></div>
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="pendingHoursInput">Pending Hours</label>
+                  <input type="number" id="pendingHoursInput" min="0" max="24" step="1" value="0" class="input input-lg" required />
+                </div>
+                <div class="form-group">
+                  <label for="pendingMinutesInput">Pending Minutes</label>
+                  <input type="number" id="pendingMinutesInput" min="0" max="59" step="1" value="0" class="input input-lg" required />
+                </div>
+              </div>
+
+              <div class="quick-duration-row">
+                <span class="quick-label">Quick presets:</span>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="0">0m</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="30">30m</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="60">1 hr</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="90">1h 30m</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="120">2 hrs</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="180">3 hrs</button>
+                <button type="button" class="chip-btn chip-amber" data-pending-mins="240">4 hrs</button>
+              </div>
+            </div>
+
+            <div class="eod-group eod-extra-group">
+              <div class="eod-group-title">🌟 Extra Study Hours <span class="eod-hint">(− Decreases Pool)</span></div>
+              <div class="form-row two-cols">
+                <div class="form-group">
+                  <label for="extraHoursInput">Extra Hours</label>
+                  <input type="number" id="extraHoursInput" min="0" max="24" step="1" value="0" class="input input-lg" required />
+                </div>
+                <div class="form-group">
+                  <label for="extraMinutesInput">Extra Minutes</label>
+                  <input type="number" id="extraMinutesInput" min="0" max="59" step="1" value="0" class="input input-lg" required />
+                </div>
+              </div>
+
+              <div class="quick-duration-row">
+                <span class="quick-label">Quick presets:</span>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="0">0m</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="30">30m</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="60">1 hr</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="90">1h 30m</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="120">2 hrs</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="180">3 hrs</button>
+                <button type="button" class="chip-btn chip-emerald" data-extra-mins="240">4 hrs</button>
+              </div>
+            </div>
+
+            <div class="pool-impact-preview impact-neutral" id="dailyPoolImpactPreview">
+              <!-- Populated dynamically -->
+            </div>
+
+            <div class="form-group">
+              <label for="dailyNoteInput">End-of-Day Note (Optional)</label>
+              <input type="text" id="dailyNoteInput" placeholder="e.g., Put in 1.5 extra hours on Physics, or 1h pending for tomorrow..." class="input" />
+            </div>
+
+            <button type="submit" class="btn btn-amber btn-block" id="saveDailyLogBtn">💾 Save End-of-Day Pending / Extra Hours</button>
+          </form>
+        </section>
+      </div>
+
+      <!-- RIGHT COLUMN: Daily Visual Timeline & Session List -->
+      <div class="workspace-right">
+        <section class="card timeline-card">
+          <div class="card-header">
+            <div>
+              <h2>📅 Daily Study Timeline &amp; Sessions</h2>
+              <p class="card-desc" id="timelineSubtitle">Visualizing when you studied, breaks between sessions, and remaining pending time</p>
+            </div>
+          </div>
+
+          <!-- Proportional Visual Bar -->
+          <div class="visual-bar-section" id="visualBarSection">
+            <div class="visual-bar-header">
+              <span>Day Schedule Overview</span>
+              <div class="visual-legend">
+                <span class="legend-item"><i class="dot dot-study"></i> Studied</span>
+                <span class="legend-item"><i class="dot dot-break"></i> Break Between Sessions</span>
+                <span class="legend-item"><i class="dot dot-pending"></i> Pending (+Pool)</span>
+                <span class="legend-item"><i class="dot dot-extra"></i> Extra Hours (−Pool)</span>
+              </div>
+            </div>
+            <div class="visual-bar-track" id="visualBarTrack">
+              <!-- Populated dynamically -->
+            </div>
+            <div class="visual-bar-labels" id="visualBarLabels"></div>
+          </div>
+
+          <!-- Chronological Sessions + Breaks List -->
+          <div class="timeline-list" id="dailyTimelineList">
+            <!-- Populated dynamically -->
+          </div>
+
+          <!-- Daily Report Summary Footer Box -->
+          <div class="daily-summary-footer" id="dailySummaryFooter">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- FULL STUDY & PENDING REPORT SECTION -->
+    <section class="card report-section">
+      <div class="report-header">
+        <div>
+          <h2>📊 Student Study &amp; Pending Time Report</h2>
+          <p class="card-desc">Complete breakdown of <strong>when you studied</strong>, <strong>how much you studied</strong>, and <strong>how much pending/gap time remains</strong>.</p>
+        </div>
+
+        <div class="report-filters">
+          <div class="filter-pills">
+            <button type="button" class="filter-pill active" data-range="all">All Time</button>
+            <button type="button" class="filter-pill" data-range="7d">Last 7 Days</button>
+            <button type="button" class="filter-pill" data-range="30d">Last 30 Days</button>
+            <button type="button" class="filter-pill" data-range="month">This Month</button>
+          </div>
+          <div class="custom-range-inputs">
+            <input type="date" id="reportStartDate" class="input input-sm" title="From Date" />
+            <span>to</span>
+            <input type="date" id="reportEndDate" class="input input-sm" title="To Date" />
+            <button type="button" class="btn btn-secondary btn-sm" id="applyCustomRangeBtn">Filter</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report Aggregate Summary Banner -->
+      <div class="report-summary-grid">
+        <div class="report-stat-box stat-studied">
+          <span class="stat-title">Total Time Studied</span>
+          <strong class="stat-big" id="repTotalStudied">0h 00m</strong>
+          <span class="stat-meta" id="repAvgStudied">Avg: 0h 00m / day</span>
+        </div>
+
+        <div class="report-stat-box stat-pending">
+          <span class="stat-title">Pending &amp; Extra Logged</span>
+          <strong class="stat-big" id="repPendingExtraBreakdown">Pending: +0h 00m</strong>
+          <span class="stat-meta" id="repExtraMeta">Extra: -0h 00m</span>
+        </div>
+
+        <div class="report-stat-box stat-ratio" id="repPoolBox">
+          <span class="stat-title">Pending Hours Pool</span>
+          <strong class="stat-big" id="repPoolBalance">0h 00m</strong>
+          <span class="stat-meta" id="repPoolStatusMeta">Stipulated hours matched</span>
+        </div>
+
+        <div class="report-stat-box stat-sessions">
+          <span class="stat-title">Days &amp; Sessions Logged</span>
+          <strong class="stat-big" id="repTotalDays">0 Days</strong>
+          <span class="stat-meta" id="repTotalSessions">0 study sessions</span>
+        </div>
+      </div>
+
+      <!-- Subject Breakdown -->
+      <div class="subject-breakdown-box" id="subjectBreakdownBox">
+        <h3>📚 Time Studied by Subject</h3>
+        <div class="subject-bars" id="subjectBarsList"></div>
+      </div>
+
+      <!-- Day-by-Day Detailed Report Table -->
+      <div class="table-responsive">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>When Student Studied (Session Start – End Times)</th>
+              <th>How Much Studied</th>
+              <th>Breaks Between Sessions</th>
+              <th>End-of-Day Pending / Extra</th>
+              <th>Pending Hours Pool</th>
+              <th>End-of-Day Note</th>
+              <th class="no-print">Action</th>
+            </tr>
+          </thead>
+          <tbody id="reportTableBody">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

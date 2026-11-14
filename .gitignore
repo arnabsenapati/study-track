@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Electron / Build outputs
+dist/
+release/
+out/
+
+# Local SQLite database & diagnostic logs
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.log
+npm-debug.log*
+
+# OS / Environment
+.DS_Store
+Thumbs.db
+.env
+.env.*

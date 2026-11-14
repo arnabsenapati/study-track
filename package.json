@@ -1,0 +1,44 @@
+{
+  "name": "studytrack",
+  "productName": "StudyTrack",
+  "version": "1.2.0",
+  "description": "Student Study Time & Gap/Pending Time Tracker Desktop App",
+  "author": "StudyTrack",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "desktop": "electron .",
+    "build:exe": "electron-builder --win portable dir"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.studytrack.desktop",
+    "productName": "StudyTrack",
+    "afterPack": "./afterPack.js",
+    "files": [
+      "electron-main.js",
+      "server.js",
+      "public/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "public/icon.ico",
+      "target": [
+        "portable"
+      ],
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "StudyTrack-Portable-${version}.exe"
+    }
+  }
+}
